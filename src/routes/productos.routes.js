@@ -132,6 +132,38 @@ router.put('/:id', soloAdmin, async (req, res) => {
   }
 });
 
+// PATCH /api/productos/:id/stock  { talla: "M", delta: -1 }
+// Suma o resta stock de una talla (ej: "vendí 1"). Es atómico y nunca deja stock negativo.
+router.patch('/:id/stock', soloAdmin, async (req, res) => {
+  try {
+    if (!idValido(req.params.id)) return res.status(404).json({ mensaje: 'Producto no encontrado' });
+
+    const talla = String(req.body.talla || '');
+    const delta = Number(req.body.delta);
+    if (!talla || !Number.isInteger(delta) || delta === 0 || Math.abs(delta) > 100) {
+      return res.status(400).json({ mensaje: 'Datos inválidos' });
+    }
+
+    // Si se resta, la talla debe tener stock suficiente
+    const stockMinimo = delta < 0 ? -delta : 0;
+    const actualizado = await Producto.findOneAndUpdate(
+      { _id: req.params.id, tallas: { $elemMatch: { talla, stock: { $gte: stockMinimo } } } },
+      { $inc: { 'tallas.$.stock': delta } },
+      { new: true }
+    );
+
+    if (!actualizado) {
+      const existe = await Producto.exists({ _id: req.params.id, 'tallas.talla': talla });
+      return existe
+        ? res.status(400).json({ mensaje: `No queda stock en talla ${talla}` })
+        : res.status(404).json({ mensaje: 'Producto o talla no encontrada' });
+    }
+    res.json(actualizado);
+  } catch (err) {
+    res.status(500).json({ mensaje: 'Error actualizando stock' });
+  }
+});
+
 // DELETE /api/productos/:id
 router.delete('/:id', soloAdmin, async (req, res) => {
   try {
