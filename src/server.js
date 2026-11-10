@@ -29,11 +29,17 @@ const origenesPermitidos = (process.env.FRONTEND_URL || 'http://localhost:4200')
   .map((u) => u.trim().replace(/\/$/, ''))
   .filter(Boolean);
 
+// Links de vista previa que Vercel crea en cada deploy del front
+// Ej: https://minute90-7ydl09yiv-minute-90.vercel.app
+const PREVIEW_VERCEL = /^https:\/\/minute90-[a-z0-9-]+-minute-90\.vercel\.app$/;
+
 app.use(
   cors({
     origin(origin, callback) {
       // Sin origin = Postman, curl, abrir la URL directo en el navegador
-      if (!origin || origenesPermitidos.includes(origin)) return callback(null, true);
+      if (!origin || origenesPermitidos.includes(origin) || PREVIEW_VERCEL.test(origin)) {
+        return callback(null, true);
+      }
       callback(new Error('Origen no permitido por CORS'));
     },
   })
