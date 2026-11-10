@@ -2,13 +2,13 @@ const express = require('express');
 const mongoose = require('mongoose');
 const Producto = require('../models/Producto');
 const soloAdmin = require('../middleware/auth');
-const { borrarImagen } = require('../config/cloudinary');
+const { borrarImagen, borrarCarpeta } = require('../config/cloudinary');
 
 const router = express.Router();
 
 const CAMPOS_PERMITIDOS = [
   'nombre', 'equipo', 'liga', 'temporada', 'tipo', 'descripcion',
-  'precio', 'precioOferta', 'tallas', 'imagenes', 'destacado', 'activo',
+  'precio', 'precioOferta', 'tallas', 'imagenes', 'carpeta', 'destacado', 'activo',
 ];
 
 // Solo deja pasar los campos que el admin puede editar
@@ -83,6 +83,18 @@ router.get('/admin/todos', soloAdmin, async (req, res) => {
   }
 });
 
+// GET /api/productos/admin/:id  -> detalle aunque esté oculto (para editar)
+router.get('/admin/:id', soloAdmin, async (req, res) => {
+  try {
+    if (!idValido(req.params.id)) return res.status(404).json({ mensaje: 'Producto no encontrado' });
+    const producto = await Producto.findById(req.params.id);
+    if (!producto) return res.status(404).json({ mensaje: 'Producto no encontrado' });
+    res.json(producto);
+  } catch (err) {
+    res.status(500).json({ mensaje: 'Error obteniendo producto' });
+  }
+});
+
 // POST /api/productos
 router.post('/', soloAdmin, async (req, res) => {
   try {
@@ -128,7 +140,9 @@ router.delete('/:id', soloAdmin, async (req, res) => {
     const producto = await Producto.findByIdAndDelete(req.params.id);
     if (!producto) return res.status(404).json({ mensaje: 'Producto no encontrado' });
 
+    // Borra sus fotos y su carpeta en Cloudinary
     await Promise.allSettled(producto.imagenes.map((img) => borrarImagen(img.publicId)));
+    if (producto.carpeta) await borrarCarpeta(producto.carpeta);
     res.json({ mensaje: 'Producto eliminado' });
   } catch (err) {
     res.status(500).json({ mensaje: 'Error eliminando producto' });

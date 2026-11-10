@@ -10,17 +10,14 @@ const productosRoutes = require('./routes/productos.routes');
 const uploadRoutes = require('./routes/upload.routes');
 const ajustesRoutes = require('./routes/ajustes.routes');
 
-// Si falta alguna variable importante, mejor no arrancar
-const REQUERIDAS = ['MONGO_URI', 'JWT_SECRET'];
-const faltantes = REQUERIDAS.filter((v) => !process.env[v]);
+const faltantes = ['MONGO_URI', 'JWT_SECRET'].filter((v) => !process.env[v]);
 if (faltantes.length) {
   console.error(`Faltan variables de entorno: ${faltantes.join(', ')}`);
-  process.exit(1);
 }
 
 const app = express();
 
-// Necesario en Render/Railway para que el rate limit vea la IP real del cliente
+// Necesario en Vercel/Render para que el rate limit vea la IP real del cliente
 app.set('trust proxy', 1);
 
 app.use(helmet());
@@ -29,13 +26,13 @@ app.use(helmet());
 // Ej: http://localhost:4200,https://minute90.vercel.app
 const origenesPermitidos = (process.env.FRONTEND_URL || 'http://localhost:4200')
   .split(',')
-  .map((u) => u.trim())
+  .map((u) => u.trim().replace(/\/$/, ''))
   .filter(Boolean);
 
 app.use(
   cors({
     origin(origin, callback) {
-      // Sin origin = Postman, curl, etc.
+      // Sin origin = Postman, curl, abrir la URL directo en el navegador
       if (!origin || origenesPermitidos.includes(origin)) return callback(null, true);
       callback(new Error('Origen no permitido por CORS'));
     },
@@ -44,7 +41,19 @@ app.use(
 
 app.use(express.json({ limit: '1mb' }));
 
+app.get('/', (req, res) => res.json({ api: 'Minute 90', ok: true }));
 app.get('/api/salud', (req, res) => res.json({ ok: true }));
+
+// Asegura la conexión a MongoDB antes de cualquier ruta que la use
+app.use(async (req, res, next) => {
+  try {
+    await conectarDB();
+    next();
+  } catch (err) {
+    console.error('Error conectando a MongoDB:', err.message);
+    res.status(503).json({ mensaje: 'Base de datos no disponible, intenta en unos segundos' });
+  }
+});
 
 app.use('/api/auth', authRoutes);
 app.use('/api/productos', productosRoutes);
@@ -62,10 +71,13 @@ app.use((err, req, res, next) => {
   if (err.type === 'entity.parse.failed') {
     return res.status(400).json({ mensaje: 'JSON inválido' });
   }
+  if (err.type === 'entity.too.large') {
+    return res.status(413).json({ mensaje: 'Datos demasiado grandes' });
+  }
   if (err.name === 'MulterError') {
     const mensajes = {
-      LIMIT_FILE_SIZE: 'Cada imagen debe pesar menos de 5 MB',
-      LIMIT_FILE_COUNT: 'Máximo 6 imágenes por subida',
+      LIMIT_FILE_SIZE: 'La imagen debe pesar menos de 4 MB',
+      LIMIT_FILE_COUNT: 'Sube una imagen a la vez',
       LIMIT_UNEXPECTED_FILE: 'Campo de archivo inválido (usa "imagenes")',
     };
     return res.status(400).json({ mensaje: mensajes[err.code] || err.message });
@@ -77,8 +89,16 @@ app.use((err, req, res, next) => {
   res.status(500).json({ mensaje: 'Error en el servidor' });
 });
 
-const PORT = process.env.PORT || 4000;
+// En local (npm run dev / npm start) levanta el servidor.
+// En Vercel no se ejecuta: Vercel usa el app exportado.
+if (require.main === module) {
+  const PORT = process.env.PORT || 4000;
+  conectarDB()
+    .then(() => app.listen(PORT, () => console.log(`API Minute 90 en http://localhost:${PORT}`)))
+    .catch((err) => {
+      console.error('Error conectando a MongoDB:', err.message);
+      process.exit(1);
+    });
+}
 
-conectarDB().then(() => {
-  app.listen(PORT, () => console.log(`API Minute 90 en http://localhost:${PORT}`));
-});
+module.exports = app;

@@ -34,6 +34,7 @@ const productoSchema = new mongoose.Schema(
     precioOferta: { type: Number, min: 0, default: null },
     tallas: { type: [tallaSchema], default: [] },
     imagenes: { type: [imagenSchema], default: [] },
+    carpeta: { type: String, trim: true, default: '' },            // Carpeta en Cloudinary, ej: minute90/productos/colo-colo-local-2025
     destacado: { type: Boolean, default: false },
     activo: { type: Boolean, default: true },                      // false = oculto en la tienda
   },
@@ -41,6 +42,7 @@ const productoSchema = new mongoose.Schema(
 );
 
 productoSchema.index({ nombre: 'text', equipo: 'text', liga: 'text' });
+productoSchema.index({ carpeta: 1 });
 
 module.exports = mongoose.model('Producto', productoSchema);
 module.exports.TALLAS = TALLAS;
